@@ -7,8 +7,8 @@ Atom selection: C3’
 
 # Steps of the project
 1. Parse pdb file (both native and predicted)
-2. Extract only C3' coordinates
-3. Superimpose
-4. Calculate RMSD
+2. Superimpose
+3. Extract only C3' coordinates
+5. Calculate RMSD
 
    
