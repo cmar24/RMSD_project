@@ -5,56 +5,109 @@ import numpy as np
 import argparse
 
 class CustomCGRMSD:
+    """
+    A class to calculate CGRMSD (Coarse-Grained RMSD) for RNA structures.
+
+    Attributes:
+        - atom_names (list): List of atom names to consider for RMSD calculations.
+        - parser (PDBParser): Bio.PDB parser for reading PDB files.
+        - rmsd_column_name (str): Column name for the computed CGRMSD values in output CSVs.
+    """
     def __init__(self, atom_names):
         self.atom_names = atom_names
-        self.parser = PDBParser(QUIET=True)
-        self.rmsd_column_name = f"CGRMSD_{'_'.join(atom_names)}"
+        self.parser = PDBParser(QUIET=True) # Suppress warnings while parsing PDB files
+        self.rmsd_column_name = f"CGRMSD_{'_'.join(atom_names)}" # Generate column name for CSV
     
     def get_atoms(self, structure):
-        """Retrieve specific atoms from a structure."""
+        """
+        Retrieve specific atoms from a structure based on atom names.
+
+        Parameters:
+            - structure (Structure): A Bio.PDB Structure object.
+
+        Returns:
+            - list: A list of Atom objects corresponding to the specified atom names.
+        """
         atoms = []
         for residue in structure.get_residues():
             for atom in residue:
-                if atom.get_id() in self.atom_names:
+                if atom.get_id() in self.atom_names: # Check if atom matches the specified names
                     atoms.append(atom)
         return atoms
     
     def calculate_rmsd(self, native_atoms, predict_atoms):
-        """Calculate RMSD for aligned atoms."""
+        """
+        Calculate RMSD for aligned atoms.
+
+        Parameters:
+            - native_atoms (list): List of Atom objects from the native structure.
+            - predict_atoms (list): List of Atom objects from the predicted structure.
+
+        Returns:
+            - float: The calculated RMSD value.
+        """
+        # Calculate coordinate differences for each atom pair
         diffs = np.array([native.coord - predict.coord for native, predict in zip(native_atoms, predict_atoms)])
+        # Compute RMSD using the squared differences
         rmsd = np.sqrt((diffs ** 2).sum() / len(diffs))
         return rmsd
     
     def process_single_structure(self, native_file, predict_file):
-        """Calculate CGRMSD for a single native and predicted structure."""
-        # Load native structure
+        """
+        Calculate CGRMSD for a single native and predicted structure.
+
+        Parameters:
+            - native_file (str): Path to the native PDB file.
+            - predict_file (str): Path to the predicted PDB file.
+
+        Returns:
+            - float: The calculated CGRMSD value.
+        """
+        # Parse the native structure and extract atoms
         native_structure = self.parser.get_structure('native', native_file)
         native_atoms = self.get_atoms(native_structure)
         
-        # Load predicted structure
+        # Parse the predicted structure and extract atoms
         predict_structure = self.parser.get_structure('predict', predict_file)
         predict_atoms = self.get_atoms(predict_structure)
         
-        # Check if atom counts match
+        # Ensure the number of atoms in both structures match
         if len(native_atoms) != len(predict_atoms):
             raise ValueError("The number of atoms in the native and predicted structures do not match.")
         
-        # Superimpose and calculate RMSD
+        # Superimpose predicted atoms onto native atoms
         super_imposer = Superimposer()
         super_imposer.set_atoms(native_atoms, predict_atoms)
         super_imposer.apply(predict_structure.get_atoms())
-        
+
+        # Calculate and return RMSD
         rmsd = self.calculate_rmsd(native_atoms, predict_atoms)
         return rmsd
 
     def process_all_structures(self, native_dir, predict_dir, csv_dir):
-        """Process all structures in the native directory."""
+        """
+        Process all structures in the native directory and compute CGRMSD for each.
+
+        Parameters:
+            - native_dir (str): Directory containing native PDB files.
+            - predict_dir (str): Directory containing predicted PDB files.
+            - csv_dir (str): Directory containing CSV files with scores and predicted file names.
+        """
+        # Iterate over all native PDB files
         for native_file in os.listdir(native_dir):
-            structure_name = native_file.split('.')[0]
+            structure_name = native_file.split('.')[0] # Extract structure name without extension
             self.process_structure(structure_name, native_dir, predict_dir, csv_dir)
 
     def process_structure(self, structure_name, native_dir, predict_dir, csv_dir):
-        """Calculate and save CGRMSD for each predicted structure of a given structure."""
+        """
+        Calculate and save CGRMSD for each predicted structure of a given structure.
+
+        Parameters:
+            structure_name (str): Name of the structure to process.
+            native_dir (str): Directory containing native PDB files.
+            predict_dir (str): Directory containing predicted PDB files.
+            csv_dir (str): Directory containing CSV files with scores and predicted file names.
+        """
         # Load native structure
         native_path = os.path.join(native_dir, f"{structure_name}.pdb")
         native_structure = self.parser.get_structure(structure_name, native_path)
@@ -65,16 +118,17 @@ class CustomCGRMSD:
         df = pd.read_csv(csv_path, dtype={0: str})  # Ensure first column is treated as string
         rmsd_values = [] 
         
-        # Calculate CGRMSD for each predicted structure
+        # Iterate over each predicted file in the CSV
         for _, row in df.iterrows():
             predict_file = str(row.iloc[0]).replace("normalized_", "")  # Ensure predict_file is string
             predict_path = os.path.join(predict_dir, structure_name, predict_file)
 
+            # Skip if the predicted file doesn't exist
             if not os.path.exists(predict_path):
                 rmsd_values.append(None)
                 continue
             
-            # Load predicted structure
+            # Parse the predicted structure and extract atoms
             predict_structure = self.parser.get_structure(f"{structure_name}_pred", predict_path)
             predict_atoms = self.get_atoms(predict_structure)
             
@@ -83,32 +137,41 @@ class CustomCGRMSD:
                 rmsd_values.append(None)
                 continue
             
-            # Superimpose and calculate RMSD
+            # Superimpose predicted atoms onto native atoms
             super_imposer = Superimposer()
             super_imposer.set_atoms(native_atoms, predict_atoms)
             super_imposer.apply(predict_structure.get_atoms())
-            
+
+            # Calculate and append RMSD
             rmsd = self.calculate_rmsd(native_atoms, predict_atoms)
             rmsd_values.append(rmsd)
         
-        # Save updated CSV with the custom column name for CGRMSD
+        # Add RMSD values as a new column in the CSV
         df[self.rmsd_column_name] = rmsd_values
-        df.to_csv(csv_path, index=False)
+        df.to_csv(csv_path, index=False) # Save the updated DataFrame back to the CSV
 
     def calculate_correlation(self, df):
-        """Calculate and print the Pearson correlation matrix for a given DataFrame."""
+        """
+        Calculate and return the Pearson correlation matrix for a given DataFrame.
+
+        Parameters:
+            df (DataFrame): A Pandas DataFrame containing numeric data.
+
+        Returns:
+            DataFrame: Pearson correlation matrix of the numeric columns.
+        """
         # Drop rows with missing values
         df_filtered = df.dropna()     
 
-        # Select only numeric columns
+        # Select only numeric columns for correlation calculation
         df_numeric = df_filtered.select_dtypes(include=[np.number])
 
         # Calculate correlation matrix using Pearson method
         correlation_matrix = df_numeric.corr(method='pearson')
-
         return correlation_matrix
 
 def main():
+    # Main entry point for the script
     parser = argparse.ArgumentParser(description="Calculate CGRMSD and correlation matrix for RNA structures.")
     parser.add_argument('input_type', type=str, choices=['single', 'all'], help="Specify whether to process 'single' pair of files or 'all' structures in directories.")
     parser.add_argument('atom_names', type=str, nargs='+', help="List of atom names to be considered for CGRMSD calculation")
