@@ -236,7 +236,9 @@ def main():
             correlation_matrix = cgrmsd_calculator.calculate_correlation(df)
             correlation_matrix_path = os.path.join(correlation_matrix_dir, f"{protein_name}_cormat.csv")
             correlation_matrix.to_csv(correlation_matrix_path)
-
+    
+    # Final message to indicate successful execution
+    print("Execution completed successfully!")
 
 if __name__ == "__main__":
     main()
